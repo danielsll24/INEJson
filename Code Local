@@ -1,0 +1,108 @@
+#Lo que cambié fue en dd1 y sí logra leer, se atora cuando se extrae el pdf y corro el loop.
+
+rm(list = ls())
+
+path <- "/Volumes/DANIELSAAV/ineJson/loc"
+
+#library(rjson)
+library(jsonlite)
+
+# function extracting secciones and corresponding districts in given json file
+getSec <- function(edo=NA, edon=NA, jsonFile=NA){
+  # check that input is correctly specified
+  output <- data.frame() # will receive secciones to plug into eqMp
+  edos <- c("ags", "bc", "bcs", "cam", "coa", "col", "cps", "cua", "df", "dgo", "gua", "gue", "hgo", "jal", "mex", "mic", "mor", "nay", "nl", "oax", "pue", "que", "qui", "san", "sin", "son", "tab", "tam", "tla", "ver", "yuc", "zac")
+  if (is.na(edo)==TRUE & is.na(edon)==TRUE){
+    stop("Must provide edo or edon.")
+  }
+  if (is.na(edo)==FALSE & (is.character(edo)==FALSE | length(intersect(edo, edos))==0)){
+    stop("edo must be one of valid abbreviations: ags, bc, bcs, cam, coa, col, cps, cua, df, dgo, gua, gue, hgo, jal, mex, mic, mor, nay, nl, oax, pue, que, qui, san, sin, son, tab, tam, tla, ver, yuc, zac")
+  }
+  if (is.na(edon)==FALSE & (is.numeric(edon)==FALSE | edon<1 | edon>32)){
+    stop("edon must be numeric in 1:32.")
+  }
+  if (is.na(edo)==FALSE & is.na(edon)==FALSE){
+    if (edos[edon]!=edo) stop("edo--edon mismatch.")
+  }
+  if (is.na(edo)==TRUE){
+    edo <- edos[edon]
+  }
+  if (is.na(edon)==TRUE){
+    edon <- which(edos==edo)
+  }
+  # read file
+  txt <- readLines(con = jsonFile, warn = FALSE)
+  #txt <- file.path(dd, "OaxacaLocal.json") 
+  dat <- fromJSON(txt)#, flatten=TRUE)
+  D <- max(dat$distritos$d) # number of districts in state
+  for (dis in 1:D){
+    #dis <- 1 # debug
+    tmp.m <- dat$distritos$des[[dis]]$mu
+    M <- length(tmp.m)
+    if (M==1){
+      tmp.s <- dat$distritos$des[[dis]]$s[[1]]
+      S <- length(tmp.s)
+      tmp.e <- data.frame(edon=rep(edon,S), seccion=tmp.s, munn=rep(tmp.m,S), dis=rep(dis,S))
+    } else {
+      tmp.e <- data.frame()
+      for(munn in 1:M){
+        #munn <- 2 # debug
+        tmp.s <- dat$distritos$des[[dis]]$s[[munn]]
+        S <- length(tmp.s)
+        tmp.e <- rbind(tmp.e, data.frame(edon=rep(edon,S), seccion=tmp.s, munn=rep(tmp.m[munn],S), dis=rep(dis,S)))
+      }
+    }
+    output <- rbind(output, tmp.e)
+  }
+  return(output)
+}
+
+# aqui empieza la manipulacion
+edon <- 1 # 1:32
+edo <- c("ags", "bc", "bcs", "cam", "coa", "col", "cps", "cua", "df", "dgo", "gua", "gue", "hgo", "jal", "mex", "mic", "mor", "nay", "nl", "oax", "pue", "que", "qui", "san", "sin", "son", "tab", "tam", "tla", "ver", "yuc", "zac")[edon]
+#dd <- "/home/eric/Desktop/data/elecs/MXelsCalendGovt/redistrict/ineJson/pruebas"
+dd1 <- paste(path,"/", edo, sep = "")
+dd2 <- paste(path, "loc/e2/", edo, sep = "")
+dd3 <- paste(path, "loc/e3/",     sep = "")
+setwd(dd1) 
+
+# explore workdir
+files.tmp <- list.files()
+files.tmp <- files.tmp[grep(paste(edo, ".+zip", sep = ""), files.tmp)]     # keep only zipped in listing
+files.tmp <- files.tmp[-grep("geojson", files.tmp)] # drop geojson
+tmp <- grep("100|157", files.tmp)                   # locate first/second scenario... 
+files.tmp <- c(files.tmp[tmp], files.tmp[-tmp])     # and place it at start of loop
+#
+i <- 1
+## # file contents
+## unzip(tmp, list = TRUE)
+unzip(files.tmp[i])
+name.tmp <- unzip(files.tmp[i], list = TRUE)$Name # pick unzipped file's name for dataframe's column
+# extract secciones
+dat.tmp <- getSec(edon = edon, jsonFile = name.tmp)
+# simplify name
+name.tmp <- sub(pattern = "SICED--D[FL]--(.+)--.+--.+", replacement = "\\1", name.tmp)
+colnames(dat.tmp)[which(colnames(dat.tmp)=="dis")] <- paste("dis", name.tmp, sep = "") # change name accordingly
+#
+output <- dat.tmp
+
+for (i in 2:length(files.tmp)){
+  #i <- 2 # debug
+  unzip(files.tmp[i])
+  name.tmp <- unzip(files.tmp[i], list = TRUE)$Name # pick unzipped file's name
+  # extract secciones
+  dat.tmp <- getSec(edon = edon, jsonFile = name.tmp)
+  # simplify name
+  name.tmp <- sub(pattern = "SICED--D[FL]--(.+)--.+--.+", replacement = "\\1", name.tmp)
+  colnames(dat.tmp)[which(colnames(dat.tmp)=="dis")] <- paste("dis", name.tmp, sep = "") # change name accordingly
+  #
+  output <- merge(x = output, y = dat.tmp, by = c("edon", "seccion", "munn"), all = TRUE) # merge data
+}
+
+head(output)
+
+e1 <- output
+output <- merge(x = e1, y = output, by = c("edon","seccion","munn"))
+
+write.csv(output, file = paste(path, edo, "Loc.csv", sep = ""))
+#write.csv(output, file = paste(path, edo, "Loc.csv", sep = ""))
